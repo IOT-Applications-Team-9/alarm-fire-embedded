@@ -10,3 +10,6 @@ Các linh kiện:
 - Led 3 màu
 - Màn LCD 1602 giao tiếp qua I2C
 - Còi (buzzer)
+
+### Yêu cầu cài đặt
+Project yêu cầu sử dụng Platform.io để cài đặt:  https://platformio.org/
