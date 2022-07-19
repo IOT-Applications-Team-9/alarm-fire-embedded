@@ -51,10 +51,10 @@ PubSubClient mqttClient(wifiClient);
 LiquidCrystal_I2C lcd(LCD_ADDR, LCD_WIDTH, LCD_HEIGHT);
 
 // chuyển đổi 0-3.3V 12bit -> 0-5V 10bit
-int convert(int a)
-{
-  return (int)(a / 4096.0 * 3.3 / 5.0 * 1024.0);
-}
+// int convert(int a)
+// {
+//   return (int)(a / 4096.0 * 3.3 / 5.0 * 1024.0);
+// }
 
 // đổi màu led
 void changeLedColor(String color)
@@ -281,13 +281,13 @@ void loop()
 
     // Đọc dữ liệu từ cảm biến lửa
     fire = analogRead(FIRE_PIN);
-    fire = convert(fire);
+    //fire = convert(fire);
     Serial.print("Fire: ");
     Serial.print(fire);
 
     // Đọc dữ liệu từ cảm biến khí gas
     gas = analogRead(GAS_PIN);
-    gas = convert(gas);
+    //gas = convert(gas);
     Serial.print(" Gas: ");
     Serial.println(gas);
 
