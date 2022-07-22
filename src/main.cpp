@@ -28,7 +28,7 @@
 #define GAS_PIN 35
 
 // thông số wifi
-const char *ssid = "Nguyên";
+const char *ssid = "Nguyen";
 const char *password = "12345678";
 
 // thông số broker
@@ -39,6 +39,7 @@ String topic = "nguyentran/iot";
 // Thông số môi trường
 float humi, temp;
 int fire, gas;
+const int fireThreshold = 3500, gasThreshold = 2375;
 boolean hasFire, hasGas;
 
 // mốc thời gian
@@ -292,14 +293,14 @@ void loop()
     Serial.println(gas);
 
     // nếu phát hiện lửa và rò rỉ khí gas
-    if (fire < 600 || gas > 430)
+    if (fire < fireThreshold || gas > gasThreshold)
     {
-      if (fire < 600)
+      if (fire < fireThreshold)
       {
         Serial.print("HAS FIRE");
         hasFire = true;
       }
-      if (gas > 430)
+      if (gas > gasThreshold)
       {
         Serial.print(" HAS GAS");
         hasGas = true;
