@@ -1,3 +1,5 @@
+/**************** Import thư viện ******************/
+#include <Wire.h>
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
@@ -10,7 +12,7 @@
 #include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 
-// danh sách hằng số
+/**************** Danh sách hằng số ******************/
 #define DHT_TYPE DHT11
 #define LCD_ADDR 0x27 // địa chỉ I2C
 #define LCD_HEIGHT 2  // chiều cao LCD
@@ -18,7 +20,7 @@
 #define STEP 100
 #define DATA_CYCLE 5000 // gửi dữ liệu mỗi 5s
 
-// danh sách các chân esp32
+/**************** Danh sách GPIO ******************/
 #define RED_PIN 15
 #define GREEN_PIN 2
 #define BLUE_PIN 4
@@ -27,6 +29,7 @@
 #define FIRE_PIN 32
 #define GAS_PIN 35
 
+/**************** Tham số sử dụng ******************/
 // thông số wifi
 const char *ssid = "Nguyen";
 const char *password = "12345678";
@@ -34,7 +37,15 @@ const char *password = "12345678";
 // thông số broker
 String mqtt_server = "broker.hivemq.com";
 const uint16_t mqtt_port = 1883;
-String topic = "nguyentran/iot";
+String dataTopic = "mqtt_fas_data";
+String commandTopic = "mqtt_fas_command";
+String stateTopic = "mqtt_fas_state";
+
+// trạng thái bật/tắt của hệ thống
+int isOn = 1;
+
+// id của thiết bị
+const int deviceId = 305419896;
 
 // Thông số môi trường
 float humi, temp;
@@ -45,18 +56,13 @@ boolean hasFire, hasGas;
 // mốc thời gian
 int lastUpdate = 0;
 
-// khởi tạo các cấu trúc dữ liệu
+/**************** Khởi tạo cấu trúc dữ liệu ******************/
 DHT dht(DHT_PIN, DHT_TYPE);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 LiquidCrystal_I2C lcd(LCD_ADDR, LCD_WIDTH, LCD_HEIGHT);
 
-// chuyển đổi 0-3.3V 12bit -> 0-5V 10bit
-// int convert(int a)
-// {
-//   return (int)(a / 4096.0 * 3.3 / 5.0 * 1024.0);
-// }
-
+/**************** Định nghĩa hàm ******************/
 // đổi màu led
 void changeLedColor(String color)
 {
@@ -112,8 +118,8 @@ void displayInfo(float temp, float humi)
   lcd.print((int)round(humi));
 }
 
-// hiển thị cảnh báo
-void displayDanger(boolean hasFire, boolean hasGas)
+// hiển thị dữ liệu server gửi về
+void displayStatus(int hasFire, int hasGas)
 {
   if (hasFire && hasGas)
   {
@@ -129,7 +135,7 @@ void displayDanger(boolean hasFire, boolean hasGas)
     lcd.setCursor(5, 0);
     lcd.print("FIRE!!!");
   }
-  else
+  else if (hasGas)
   {
     lcd.clear();
     lcd.setCursor(3, 0);
@@ -140,6 +146,102 @@ void displayDanger(boolean hasFire, boolean hasGas)
   lcd.print("        ");
   lcd.setCursor(4, 1);
   lcd.print("!DANGER!");
+}
+
+// Cập nhật trạng thái lên server
+void stateReport(int state)
+{
+  Serial.print("Update trạng thái: ");
+  Serial.println(state);
+  JSONVar json;
+  json["id"] = deviceId;
+  json["state"] = state;
+  mqttClient.publish(stateTopic.c_str(), JSON.stringify(json).c_str());
+}
+
+// Hàm call back khi có dữ liệu gửi tới từ Broker
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  Serial.print("New message from topic: ");
+  Serial.println(topic);
+  for (int i = 0; i < length; i++)
+  {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  // Xử lý ở đây
+  if ((String)topic == commandTopic)
+  {
+    JSONVar command = JSON.parse((String)((const char *)payload));
+
+    // Kiểm tra xem tín hiệu điều khiển có phải cho mình không
+    if ((int)command["id"] == deviceId)
+    {
+      Serial.println("Right ID");
+
+      // Tín hiệu nhận được là tín hiệu điều khiển
+      if ((String)((const char *)command["type"]) == "control")
+      {
+        Serial.println("Control Signal");
+        int signal = (int)command["state"];
+
+        // Tín hiệu điều khiển khác với trạng thái hiện tại
+        if (signal != isOn)
+        {
+          isOn = signal;
+
+          // gửi cập nhật tới server
+          stateReport(isOn);
+
+          // Xử lý
+          if (isOn)
+          {
+            Serial.println("Signal: Turn on");
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("System is ON!");
+          }
+          else
+          {
+            Serial.println("Signal: Turn off");
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("System is OFF!");
+          }
+
+          delay(1000);
+        }
+      }
+
+      // Tín hiệu nhận được là tín hiệu cảnh báo
+      else
+      {
+        Serial.println("Warning Signal");
+
+        // Lấy tham số gửi về
+        int hasFire = command["hasFire"];
+        int hasGas = command["hasGas"];
+        int danger = command["danger"];
+
+        // Chuyển màu led
+        if (!danger)
+        {
+          changeLedColor("green");
+        }
+        else
+        {
+          // Hiển thị lên
+          if (isOn)
+          {
+            displayStatus(hasFire, hasGas);
+          }
+          changeLedColor("red");
+          warning();
+        }
+      }
+    }
+  }
 }
 
 // hàm reconnect broker
@@ -176,6 +278,9 @@ void reconnectBroker()
   lcd.print("Connected to");
   lcd.setCursor(0, 1);
   lcd.print("Broker");
+
+  // Subscribe vào topic command để nhận tín hiệu điều khiển
+  mqttClient.subscribe(commandTopic.c_str());
 
   changeLedColor("green");
   Serial.println("Connected to Broker!");
@@ -217,6 +322,7 @@ void reconnectWifi()
   delay(1000);
 }
 
+/**************** Cấu hình hệ thống ******************/
 void setup()
 {
   Serial.begin(9600);
@@ -236,7 +342,7 @@ void setup()
   Serial.println("Starting LCD ... ");
   lcd.init();
   lcd.backlight();
-  lcd.print("Hello world!");
+  lcd.print("Hello!");
   delay(1000);
 
   // Cấu hình Wifi
@@ -244,13 +350,17 @@ void setup()
 
   // Cấu hình MQTT server và port
   mqttClient.setServer(mqtt_server.c_str(), mqtt_port);
+  mqttClient.setCallback(callback);
 
   // cho đèn màu xanh khi khởi động hệ thống
   changeLedColor("green");
+  stateReport(isOn);
 }
 
+/**************** Vòng lặp hệ thống ******************/
 void loop()
 {
+  /**************** 1. Kiểm tra kết nối ******************/
   // Mất kết nối tới Wifi
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -262,73 +372,68 @@ void loop()
   if (!mqttClient.connected())
   {
     reconnectBroker();
-  }
 
-  // đủ 1 chu kỳ đọc dữ liệu
-  if (millis() - lastUpdate > DATA_CYCLE)
-  {
-    // gán lại mốc thời gian
-    lastUpdate = millis();
-
-    // đọc dữ liệu từ cảm biến nhiệt độ, độ ẩm
-    float humi = dht.readHumidity();
-    float temp = dht.readTemperature();
-
-    Serial.print(F("Độ ẩm: "));
-    Serial.print(humi);
-    Serial.print(F("%  Nhiệt độ: "));
-    Serial.print(temp);
-    Serial.print(F("°C "));
-
-    // Đọc dữ liệu từ cảm biến lửa
-    fire = analogRead(FIRE_PIN);
-    //fire = convert(fire);
-    Serial.print("Fire: ");
-    Serial.print(fire);
-
-    // Đọc dữ liệu từ cảm biến khí gas
-    gas = analogRead(GAS_PIN);
-    //gas = convert(gas);
-    Serial.print(" Gas: ");
-    Serial.println(gas);
-
-    // nếu phát hiện lửa và rò rỉ khí gas
-    if (fire < fireThreshold || gas > gasThreshold)
+    // Hoàn tất kết nối
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    if (isOn)
     {
-      if (fire < fireThreshold)
-      {
-        Serial.print("HAS FIRE");
-        hasFire = true;
-      }
-      if (gas > gasThreshold)
-      {
-        Serial.print(" HAS GAS");
-        hasGas = true;
-      }
-      Serial.println("");
-      changeLedColor("red");
-      warning();
-      displayDanger(hasFire, hasGas);
+      lcd.print("System is ON!");
     }
     else
     {
-      changeLedColor("green");
-      hasFire = false;
-      hasGas = false;
+      lcd.print("System is OFF!");
+    }
+    delay(500);
+  }
 
-      // hiển thị dữ liệu lên LCD
+  // Đọc dữ liệu trên mqtt queue
+  mqttClient.loop();
+
+  /**************** 2. Gửi dữ liệu lên server ******************/
+  // Hệ thống đang bật
+  if (isOn)
+  {
+    // đủ 1 chu kỳ đọc dữ liệu
+    if (millis() - lastUpdate > DATA_CYCLE)
+    {
+      // gán lại mốc thời gian
+      lastUpdate = millis();
+
+      // đọc dữ liệu từ cảm biến nhiệt độ, độ ẩm
+      float humi = dht.readHumidity();
+      float temp = dht.readTemperature();
+
+      Serial.print(F("Độ ẩm: "));
+      Serial.print(humi);
+      Serial.print(F("%  Nhiệt độ: "));
+      Serial.print(temp);
+      Serial.print(F("°C "));
+
+      // Đọc dữ liệu từ cảm biến lửa
+      fire = analogRead(FIRE_PIN);
+      Serial.print("Fire: ");
+      Serial.print(fire);
+
+      // Đọc dữ liệu từ cảm biến khí gas
+      gas = analogRead(GAS_PIN);
+      Serial.print(" Gas: ");
+      Serial.println(gas);
+
+      // đóng gói dữ liệu
+      JSONVar json;
+      json["deviceid"] = deviceId;
+      json["temperature"] = temp;
+      json["humidity"] = humi;
+      json["fire"] = fire;
+      json["gas"] = gas;
+
+      // gửi dữ liệu lên broker
+      mqttClient.publish(dataTopic.c_str(), JSON.stringify(json).c_str());
+
+      // Hiển thị dữ liệu
       displayInfo(temp, humi);
     }
-
-    // đóng gói dữ liệu
-    JSONVar json;
-    json["temp"] = temp;
-    json["humi"] = humi;
-    json["fire"] = fire;
-    json["gas"] = gas;
-
-    // gửi dữ liệu lên broker
-    mqttClient.publish(topic.c_str(), JSON.stringify(json).c_str());
   }
 
   // Wait a few seconds between measurements.
