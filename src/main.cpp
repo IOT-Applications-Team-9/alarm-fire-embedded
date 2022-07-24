@@ -154,7 +154,7 @@ void stateReport(int state)
   Serial.print("Update trạng thái: ");
   Serial.println(state);
   JSONVar json;
-  json["id"] = deviceId;
+  json["deviceid"] = deviceId;
   json["state"] = state;
   mqttClient.publish(stateTopic.c_str(), JSON.stringify(json).c_str());
 }
@@ -176,7 +176,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     JSONVar command = JSON.parse((String)((const char *)payload));
 
     // Kiểm tra xem tín hiệu điều khiển có phải cho mình không
-    if ((int)command["id"] == deviceId)
+    if ((int)command["deviceid"] == deviceId)
     {
       Serial.println("Right ID");
 
@@ -201,6 +201,7 @@ void callback(char *topic, byte *payload, unsigned int length)
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("System is ON!");
+            changeLedColor("green");
           }
           else
           {
@@ -208,6 +209,7 @@ void callback(char *topic, byte *payload, unsigned int length)
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("System is OFF!");
+            changeLedColor("blue");
           }
 
           delay(1000);
@@ -354,7 +356,7 @@ void setup()
 
   // cho đèn màu xanh khi khởi động hệ thống
   changeLedColor("green");
-  stateReport(isOn);
+  //stateReport(isOn);
 }
 
 /**************** Vòng lặp hệ thống ******************/
